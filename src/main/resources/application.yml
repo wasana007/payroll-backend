@@ -1,0 +1,47 @@
+server:
+  port: 8282
+  error:
+    include-message: always
+    include-binding-errors: always
+    include-stacktrace: always
+
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+    consumer:
+      group-id: payroll-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/payrolldb
+    username: wasana
+    password: 1234
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+app:
+  api:
+    base-path: /api/v1/payroll
+  kafka:
+    topic:
+      payroll: payroll-events
+      payroll-log: payroll-log-events
+    consumer:
+      group-id: payroll-group
+  cors:
+    allowed-origin: http://localhost:3001
+  backend-url: http://localhost:8282
+  version: 1.0.0
