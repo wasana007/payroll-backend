@@ -8,50 +8,53 @@
 ## Oversikt
 
 Et hendelsesdrevet backend-system som håndterer lønnsrapportering asynkront via Kafka.
-Systemet mottar lønnsmeldinger via REST API, lagrer dem i MySQL, publiserer events til Kafka,
-og sender automatisk feilmeldinger til LogSenseAI for AI-basert analyse.
+Systemet mottar lønnsmeldinger via REST API, lagrer dem først i MySQL, publiserer events til Kafka,
+og sender automatisk logg- og feilhendelser til LogSenseAI for AI-basert analyse og audit logging.
 
 Systemet er designet med fokus på:
 
-- Løst koblet arkitektur via Kafka for asynkron meldingshåndtering
-- Tydelig separasjon mellom API-lag, produsent og konsument
-- DTO-basert API-grense — entiteter eksponeres aldri direkte
-- Persistens med statussporing (PENDING → COMPLETED / FAILED) i MySQL
-- Automatisk feilrapportering til LogSenseAI via Kafka
-- React-frontend med statusvisning og direktelenke til LogSenseAI ved feil
+* Løst koblet arkitektur via Kafka for asynkron meldingshåndtering
+* Tydelig separasjon mellom API-lag, service, producer og consumer
+* DTO-basert API-grense — entiteter eksponeres aldri direkte
+* Persistens med statussporing (`PENDING → COMPLETED / FAILED`) i MySQL
+* Persistens før event-publisering for trygg meldingsflyt
+* CorrelationId-basert sporing gjennom hele systemet
+* Automatisk logg- og feilrapportering til LogSenseAI via Kafka
+* React-frontend med statusvisning og direktelenke til LogSenseAI ved feil
 
 ---
 
 ## Arkitektur
 
-```
-React-frontend (port 3001)
-      │
-      │  POST /api/v1/payroll
-      ▼
+```text id="bdbjkn"
+Client / React (port 3001)
+        ↓
+REST API (Spring Boot)
+        ↓
 PayrollController
-      │  PayrollRequest (DTO)
-      ▼
+        ↓
 PayrollService
-      ├── validate()
-      ├── map DTO → PayrollRecord-entitet
-      ├── lagre PENDING → MySQL
-      ├── PayrollProducer → Kafka topic: payroll-events
-      └── send LogEvent  → Kafka topic: payroll-log-events
-                                    │
-                    ┌───────────────┘
-                    ▼
-Apache Kafka (delt broker med LogSenseAI)
-      │                      │
-      │ payroll-events        │ payroll-log-events
-      ▼                      ▼
-PayrollConsumer          LogSenseAI
-      │                   (AI-analyse)
-      ▼
-Skatteberegning (lønn × 0.28)
-      │
-      ▼
-MySQL (payrolldb) → status: COMPLETED / FAILED
+    ├── validate()
+    ├── save PENDING → MySQL (payrolldb)
+    ├── publish PayrollEvent → Kafka (payroll-events)
+    └── publish LogEvent → Kafka (payroll-log-events)
+                    ↓
+            ┌────── Kafka Cluster ──────┐
+            │                           │
+            ↓                           ↓
+   payroll-events            payroll-log-events
+            ↓                           ↓
+   PayrollConsumer        LogSenseAI Consumer
+            ↓                           ↓
+   Tax Calculation        AI AgentService (Llama3.2)
+            ↓                           ↓
+   Update MySQL           Save AI result → PostgreSQL
+            ↓                           ↓
+        COMPLETED              AI Analysis Result
+                                        ↓
+                                    WebSocket 
+                                        ↓
+                            React Dashboard (Realtime UI)
 ```
 
 ---
@@ -101,12 +104,15 @@ Resultat lagres i PostgreSQL (LogSenseAI DB)
 
 ### Hendelsesdrevet lønnsrapportering med persistens
 
-`PayrollService` validerer innkommende `PayrollRequest` DTO, mapper den til en `PayrollRecord`-entitet,
-lagrer i MySQL med status `PENDING`, publiserer til Kafka og oppdaterer til `COMPLETED` — eller `FAILED` ved feil.
+`PayrollService` validerer innkommende `PayrollRequest` DTO,
+mapper den til en `PayrollRecord`-entitet,
+lagrer i MySQL med status `PENDING`,
+publiserer deretter `PayrollEvent` til Kafka,
+og oppdaterer til `COMPLETED` eller `FAILED` etter behandling.
 
-**Statuslivssyklus:**
+### Statuslivssyklus
 
-```
+```text id="i5sbd3"
 PENDING → COMPLETED
         → FAILED
 ```
@@ -114,26 +120,57 @@ PENDING → COMPLETED
 ### CorrelationId-basert sporing
 
 Hver lønnsinnmelding tildeles en unik `correlationId` (UUID) av servicelaget.
-React-klienten poller `GET /api/v1/payroll/{correlationId}` for å hente behandlingsresultatet.
 
-### Automatisk skatteberegning
+CorrelationId brukes gjennom hele flyten:
 
-Skatten beregnes automatisk av Kafka-konsumenten og lagres i MySQL:
+* REST API
+* Database
+* Kafka Producer
+* Kafka Consumer
+* LogSenseAI
+* Frontend polling
 
-```
-skatt = lønn × 0.28
-```
+Dette gjør hele behandlingskjeden sporbar.
+
+---
+
+### Asynkron behandling
+
+Payroll-data behandles asynkront av `PayrollConsumer`
+etter at eventet er publisert til Kafka.
+
+Forretningslogikk utføres i consumer-laget,
+og resultatet lagres tilbake i databasen.
+
+---
 
 ### AI-støttet feildiagnostikk
 
-Ved feil sendes en `LogEvent` til Kafka topic `payroll-log-events`.
-LogSenseAI plukker opp meldingen og analyserer rotårsaken automatisk med Ollama LLM.
+Ved feil sendes et `LogEvent` til Kafka topic `payroll-log-events`.
+
+LogSenseAI konsumerer eventet og utfører:
+
+* AI-basert rotårsaksanalyse
+* audit logging
+* observability
+* feildiagnostikk
+* hendelsessporing
+
+---
 
 ### React-frontend med statusvisning
 
-- Viser `COMPLETED` / `FAILED` status etter innsending
-- Ved feil: viser feilmelding + knapp "Se analyse i LogSenseAI"
-- Historikktabell med alle innsendte rapporter i sesjonen
+Frontend-applikasjonen:
+
+* sender lønnsmeldinger
+* poller status via correlationId
+* viser:
+
+    * `PENDING`
+    * `COMPLETED`
+    * `FAILED`
+* viser lenke til LogSenseAI ved feil
+* viser historikk over tidligere innsendelser
 
 ---
 
@@ -155,11 +192,20 @@ LogSenseAI plukker opp meldingen og analyserer rotårsaken automatisk med Ollama
 
 ---
 
+## Kafka Topics
+
+| Topic              | Beskrivelse                         |
+|--------------------|-------------------------------------|
+| payroll-events     | Payroll domain events               |
+| payroll-log-events | Audit- og feillogger til LogSenseAI |
+
+---
+
 ## API-referanse
 
 ### Send lønnsmelding
 
-```http
+```http id="4ws5vl"
 POST /api/v1/payroll
 Content-Type: application/json
 ```
@@ -185,9 +231,9 @@ Content-Type: application/json
 
 ---
 
-### Hent behandlingsresultat (polling)
+### Hent behandlingsresultat
 
-```http
+```http id="c1u9vt"
 GET /api/v1/payroll/{correlationId}
 ```
 
@@ -239,8 +285,7 @@ backend/
 │   └── PayrollSerializationException.java # Kastes ved Kafka-serialiseringsfeil
 │
 ├── model/
-│   ├── PayrollRecord.java                 # @Entity: correlationId, salary, tax, status, timestamps
-│   └── LogEvent.java                      # Logg-event: source, level, message, employeeId
+│   └── PayrollRecord.java                 # @Entity: correlationId, salary, tax, status, timestamps
 │
 ├── repository/
 │   └── PayrollRepository.java             # findByCorrelationId
@@ -334,21 +379,32 @@ Begge systemer deler Kafka-broker, men opererer uavhengig:
 
 ## Veikart
 
-- [x] Persistens — lagre lønn og beregnet skatt i MySQL
-- [x] Statussporing (PENDING → COMPLETED / FAILED)
-- [x] CorrelationId-sporing gjennom hele systemet
-- [x] DTO-lag — entiteter eksponeres aldri i API-grensen
-- [x] Automatisk feilrapportering til LogSenseAI
-- [x] React-frontend med statusvisning og LogSenseAI-knapp
-- [x] Eksternalisert konfigurasjon via `application.yml`
-- [ ] Autentisering med Spring Security + OAuth2
-- [ ] Progressive skattesatser
-- [ ] Unit- og integrasjonstester (JUnit 5 + Testcontainers)
+* [x] Persistens med MySQL
+* [x] Statussporing (`PENDING → COMPLETED / FAILED`)
+* [x] CorrelationId-sporing
+* [x] DTO-basert API-lag
+* [x] Kafka producer/consumer-flow
+* [x] Automatisk logg- og feilrapportering
+* [x] Integrasjon med LogSenseAI
+* [x] React-frontend med polling
+* [x] Eksternalisert konfigurasjon via `application.yml`
+* [ ] Retry / Dead Letter Queue
+* [ ] OAuth2 / JWT security
+* [ ] Metrics og observability
+* [ ] Distributed tracing
+* [ ] Kafka Schema Registry
+* [ ] Integration tests med Testcontainers
 
 ---
 
 ## Om
 
-Utviklet som et læringsprosjekt innen hendelsesdrevet arkitektur med Spring Boot og Kafka,
-med fokus på producer/consumer-mønsteret, asynkron meldingshåndtering og integrasjon
-mellom distribuerte systemer via Kafka.
+Utviklet som et læringsprosjekt innen:
+
+* hendelsesdrevet arkitektur
+* Spring Boot
+* Apache Kafka
+* distribuerte systemer
+* producer/consumer-pattern
+* asynkron backend-prosessering
+* AI-basert observability og feildiagnostikk via LogSenseAI

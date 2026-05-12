@@ -46,18 +46,14 @@ public class PayrollController {
     public ResponseEntity<PayrollResponse> getResult(
             @PathVariable String correlationId) {
 
-        try {
-            PayrollRecord entry =
-                    payrollService.findByCorrelationId(correlationId);
+        PayrollRecord entry = payrollService.findByCorrelationId(correlationId);
 
-            return ResponseEntity.ok(toResponse(entry));
-
-        } catch (RuntimeException e) {
-
+        if (entry == null) {
             log.warn("Payroll not found | correlationId={}", correlationId);
-
             return ResponseEntity.notFound().build();
         }
+
+        return ResponseEntity.ok(toResponse(entry));
     }
 
     private PayrollResponse toResponse(PayrollRecord entry) {
@@ -65,6 +61,7 @@ public class PayrollController {
         dto.setCorrelationId(entry.getCorrelationId());
         dto.setEmployeeId(entry.getEmployeeId());
         dto.setSalary(entry.getSalary());
+        dto.setTax(entry.getTax());
         dto.setMonth(entry.getMonth());
         dto.setStatus(entry.getStatus().toString());
         dto.setCreatedAt(entry.getCreatedAt() != null ? entry.getCreatedAt().toString() : "");

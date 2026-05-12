@@ -23,26 +23,38 @@ public class PayrollRecord {
     private BigDecimal salary;
 
     @Column(nullable = false)
+    private BigDecimal tax = BigDecimal.ZERO;
+
+    @Column(nullable = false)
     private String month;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private Status status;
 
     private LocalDateTime createdAt;
+
     private LocalDateTime completedAt;
 
     @PrePersist
     public void prePersist() {
         this.createdAt = LocalDateTime.now();
         this.status = Status.PENDING;
+
+        if (this.tax == null) {
+            this.tax = BigDecimal.ZERO;
+        }
+    }
+
+    @PreUpdate
+    public void preUpdate() {
+        if (this.tax == null) {
+            this.tax = BigDecimal.ZERO;
+        }
     }
 
     public Long getId() {
         return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
     }
 
     public String getCorrelationId() {
@@ -60,13 +72,21 @@ public class PayrollRecord {
     public void setEmployeeId(String employeeId) {
         this.employeeId = employeeId;
     }
- 
+
     public BigDecimal getSalary() {
         return salary;
     }
 
     public void setSalary(BigDecimal salary) {
         this.salary = salary;
+    }
+
+    public BigDecimal getTax() {
+        return tax;
+    }
+
+    public void setTax(BigDecimal tax) {
+        this.tax = tax;
     }
 
     public String getMonth() {
@@ -87,10 +107,6 @@ public class PayrollRecord {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
     }
 
     public LocalDateTime getCompletedAt() {

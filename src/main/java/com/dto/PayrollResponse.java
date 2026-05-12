@@ -1,11 +1,14 @@
 package com.dto;
 
+import java.math.BigDecimal;
+
 public class PayrollResponse {
 
     private String correlationId;
     private String employeeId;
     private String employer;
-    private java.math.BigDecimal salary;
+    private BigDecimal salary;
+    private BigDecimal tax;
     private String month;
     private String status;
     private String createdAt;
@@ -41,6 +44,14 @@ public class PayrollResponse {
 
     public void setSalary(java.math.BigDecimal salary) {
         this.salary = salary;
+    }
+
+    public BigDecimal getTax() {
+        return tax;
+    }
+
+    public void setTax(BigDecimal tax) {
+        this.tax = tax;
     }
 
     public String getMonth() {

@@ -1,12 +1,10 @@
 package com.service;
 
+import com.contracts.logai.v1.LogEvent;
+import com.contracts.payroll.v1.PayrollEvent;
 import com.dto.PayrollRequest;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.model.LogEvent;
 import com.model.PayrollRecord;
 import com.repository.PayrollRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
@@ -18,22 +16,23 @@ import java.util.UUID;
 @Service
 public class PayrollService {
 
-    private static final Logger log = LoggerFactory.getLogger(PayrollService.class);
-
     private final PayrollRepository repository;
     private final PayrollProducer payrollProducer;
-    private final KafkaTemplate<String, String> kafkaTemplate;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final KafkaTemplate<String, Object> kafkaTemplate;
 
     @Value("${app.kafka.topic.payroll-log}")
     private String logTopic;
 
     public PayrollService(PayrollRepository repository,
                           PayrollProducer payrollProducer,
-                          KafkaTemplate<String, String> kafkaTemplate) {
+                          KafkaTemplate<String, Object> kafkaTemplate) {
         this.repository = repository;
         this.payrollProducer = payrollProducer;
         this.kafkaTemplate = kafkaTemplate;
+    }
+
+    public PayrollRecord findByCorrelationId(String correlationId) {
+        return repository.findByCorrelationId(correlationId).orElse(null);
     }
 
     public PayrollRecord reportPayroll(PayrollRequest request) {
@@ -46,60 +45,44 @@ public class PayrollService {
         payroll.setMonth(request.getMonth());
         payroll.setCorrelationId(UUID.randomUUID().toString());
         payroll.setStatus(PayrollRecord.Status.PENDING);
+        payroll.setTax(BigDecimal.ZERO);
 
         PayrollRecord saved = repository.save(payroll);
-
-        payrollProducer.sendPayroll(saved);
-
-        log.info("Payroll accepted | correlationId={} employeeId={}",
-                saved.getCorrelationId(), saved.getEmployeeId());
+        payrollProducer.sendPayroll(toEvent(saved));
+        sendLog("Payroll created", saved.getCorrelationId());
 
         return saved;
     }
 
-    public PayrollRecord findByCorrelationId(String correlationId) {
-        return repository.findByCorrelationId(correlationId).orElse(null);
+    public void saveCompleted(String correlationId, BigDecimal tax) {
+
+        repository.findByCorrelationId(correlationId)
+                .ifPresent(entry -> {
+
+                    entry.setTax(tax);
+                    entry.setStatus(PayrollRecord.Status.COMPLETED);
+                    entry.setCompletedAt(LocalDateTime.now());
+
+                    repository.save(entry);
+
+                    sendLog("Payroll completed", correlationId);
+                });
     }
 
-    public void saveCompleted(String correlationId) {
-        repository.findByCorrelationId(correlationId).ifPresent(entry -> {
-            entry.setStatus(PayrollRecord.Status.COMPLETED);
-            entry.setCompletedAt(LocalDateTime.now());
-            repository.save(entry);
+    private PayrollEvent toEvent(PayrollRecord payrollRecord) {
 
-            sendLogEvent(LogEvent.info(
-                    "payroll-service",
-                    "Payroll completed | employeeId=" + entry.getEmployeeId(),
-                    entry.getEmployeeId()
-            ));
-
-            log.info("Completed | correlationId={}", correlationId);
-        });
+        return new PayrollEvent(
+                payrollRecord.getCorrelationId(),
+                payrollRecord.getEmployeeId(),
+                payrollRecord.getSalary(),
+                payrollRecord.getMonth(),
+                payrollRecord.getStatus().name()
+        );
     }
 
-    public void saveFailed(String correlationId, String errorMessage) {
-        repository.findByCorrelationId(correlationId).ifPresent(entry -> {
-            entry.setStatus(PayrollRecord.Status.FAILED);
-            entry.setCompletedAt(LocalDateTime.now());
-            repository.save(entry);
-
-            sendLogEvent(LogEvent.error(
-                    "payroll-service",
-                    "ERROR: " + errorMessage + " | employeeId=" + entry.getEmployeeId(),
-                    entry.getEmployeeId()
-            ));
-
-            log.error("Failed | correlationId={}", correlationId);
-        });
-    }
-
-    private void sendLogEvent(LogEvent event) {
-        try {
-            String json = objectMapper.writeValueAsString(event);
-            kafkaTemplate.send(logTopic, json);
-        } catch (Exception e) {
-            log.error("Failed to send log event: {}", e.getMessage());
-        }
+    private void sendLog(String message, String correlationId) {
+        LogEvent event = new LogEvent(correlationId, "INFO", message, "PAYROLL_SERVICE");
+        kafkaTemplate.send(logTopic, correlationId, event);
     }
 
     private void validate(PayrollRequest request) {
