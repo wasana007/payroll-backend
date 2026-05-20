@@ -1,13 +1,11 @@
 server:
-  port: 8282
   error:
     include-message: always
     include-binding-errors: always
-    include-stacktrace: always
+    include-stacktrace: never
 
 spring:
   kafka:
-    bootstrap-servers: localhost:9092
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -16,23 +14,21 @@ spring:
       properties:
         enable.idempotence: true
     consumer:
-      group-id: payroll-group
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
-        spring.json.trusted.packages: "*"
-
-  datasource:
-    url: jdbc:mysql://localhost:3306/payrolldb
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
-    driver-class-name: com.mysql.cj.jdbc.Driver
+        spring.json.trusted.packages: "com.contracts.payroll"
+        spring.json.value.default.type: com.contracts.payroll.v1.PayrollEvent
+        max.poll.interval.ms: 300000
+        max.poll.records: 1
+        session.timeout.ms: 60000
+        heartbeat.interval.ms: 20000
 
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false
 
 app:
   api:
@@ -43,7 +39,4 @@ app:
       payroll-log: payroll-log-events
     consumer:
       group-id: payroll-group
-  cors:
-    allowed-origin: http://localhost:3001
-  backend-url: http://localhost:8282
   version: 1.0.0

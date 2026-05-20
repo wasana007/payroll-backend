@@ -36,3 +36,11 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+### ENV ###
+.env
+*.env
+
+### Spring ###
+application-local.yml
+**/application-local.yml

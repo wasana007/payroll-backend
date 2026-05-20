@@ -5,6 +5,13 @@
 
 ---
 
+## 🎥 Demo
+
+### 🎬 Payroll - Klikk på bildet nedenfor for å se hele demoen på YouTube ▶️
+
+[![Watch Demo](docs/images/payroll.jpg)](https://www.youtube.com/watch?v=gF_LzKdxD3g&list=PLOwWtF7kBLb923hDu7gTfCGCdn5vc-KjL)
+Disclaimer: Stemmen i videoen er generert med AI-basert tekst-til-tale-teknologi.
+
 ## Oversikt
 
 Et hendelsesdrevet backend-system som håndterer lønnsrapportering asynkront via Kafka.
@@ -26,7 +33,7 @@ Systemet er designet med fokus på:
 
 ## Arkitektur
 
-```text id="bdbjkn"
+```text
 Client / React (port 3001)
         ↓
 REST API (Spring Boot)
@@ -81,6 +88,8 @@ LogSenseAI consumer
 AgentService → LLM analyserer rotårsak
       ↓
 Resultat lagres i PostgreSQL (LogSenseAI DB)
+      ↓
+WebSocket → React Dashboard (Realtime UI)
 ```
 
 ---
@@ -112,7 +121,7 @@ og oppdaterer til `COMPLETED` eller `FAILED` etter behandling.
 
 ### Statuslivssyklus
 
-```text id="i5sbd3"
+```text
 PENDING → COMPLETED
         → FAILED
 ```
@@ -128,7 +137,7 @@ CorrelationId brukes gjennom hele flyten:
 * Kafka Producer
 * Kafka Consumer
 * LogSenseAI
-* Frontend polling
+* Frontend
 
 Dette gjør hele behandlingskjeden sporbar.
 
@@ -205,7 +214,7 @@ Frontend-applikasjonen:
 
 ### Send lønnsmelding
 
-```http id="4ws5vl"
+```http
 POST /api/v1/payroll
 Content-Type: application/json
 ```
@@ -233,7 +242,7 @@ Content-Type: application/json
 
 ### Hent behandlingsresultat
 
-```http id="c1u9vt"
+```http
 GET /api/v1/payroll/{correlationId}
 ```
 
@@ -345,7 +354,16 @@ Starter PostgreSQL (LogSenseAI), MySQL (lønn), Kafka og Zookeeper.
 
 ```bash
 ./mvnw spring-boot:run
+
 ```
+
+Aktiver profil i IntelliJ:
+
+```
+Run Configuration → Environment variables → SPRING_PROFILES_ACTIVE=local
+```
+
+`application-local.yml` skal ikke committes til Git (ligger i `.gitignore`)
 
 API tilgjengelig på `http://localhost:8282`  
 Swagger UI på `http://localhost:8282/swagger-ui.html`
@@ -391,7 +409,6 @@ Begge systemer deler Kafka-broker, men opererer uavhengig:
 * [ ] Retry / Dead Letter Queue
 * [ ] OAuth2 / JWT security
 * [ ] Metrics og observability
-* [ ] Distributed tracing
 * [ ] Kafka Schema Registry
 * [ ] Integration tests med Testcontainers
 

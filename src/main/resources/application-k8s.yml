@@ -1,0 +1,19 @@
+server:
+  port: 8282
+
+spring:
+  kafka:
+    bootstrap-servers: kafka-service:9092
+    consumer:
+      group-id: payroll-group
+
+  datasource:
+    url: jdbc:mysql://mysql-service:3306/payrolldb
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+app:
+  cors:
+    allowed-origin: http://localhost:3001
+  backend-url: ${BACKEND_URL:http://payroll-backend-service:8282}
