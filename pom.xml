@@ -73,6 +73,12 @@
         </dependency>
 
         <dependency>
+            <groupId>org.camunda.bpm.springboot</groupId>
+            <artifactId>camunda-bpm-spring-boot-starter</artifactId>
+            <version>7.21.0</version>
+        </dependency>
+
+        <dependency>
             <groupId>com.contracts</groupId>
             <artifactId>event-contracts</artifactId>
             <version>1.0.1</version>

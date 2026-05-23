@@ -1,7 +1,7 @@
-# Lønnsrapportering – Hendelsesdrevet lønnsrapporteringssystem (Java + Spring Boot + Kafka + MySQL)
+# Lønnsrapportering – Hendelsesdrevet lønnsrapporteringssystem (Java + Spring Boot + Kafka + MySQL + Camunda)
 
 > Hendelsesdrevet system for lønnsrapportering, automatisk skatteberegning og AI-støttet feildiagnostikk,
-> bygget med Java 21, Spring Boot 3, Apache Kafka og MySQL.
+> bygget med Java 21, Spring Boot 3, Apache Kafka, MySQL og Camunda BPM.
 
 ---
 
@@ -9,8 +9,8 @@
 
 ### 🎬 Payroll - Klikk på bildet nedenfor for å se hele demoen på YouTube ▶️
 
-[![Watch Demo](docs/images/payroll.jpg)](https://www.youtube.com/watch?v=gF_LzKdxD3g&list=PLOwWtF7kBLb923hDu7gTfCGCdn5vc-KjL)
-Disclaimer: Stemmen i videoen er generert med AI-basert tekst-til-tale-teknologi.
+[![Watch Demo](docs/images/payroll.jpg)](https://www.youtube.com/watch?v=gF_LzKdxD3g&list=PLOwWtF7kBLb923hDu7gTfCGCdn5vc-KjL)<br>
+NB! Stemmen i videoen er generert med AI-basert tekst-til-tale-teknologi.
 
 ## Oversikt
 
@@ -28,6 +28,7 @@ Systemet er designet med fokus på:
 * CorrelationId-basert sporing gjennom hele systemet
 * Automatisk logg- og feilrapportering til LogSenseAI via Kafka
 * React-frontend med statusvisning og direktelenke til LogSenseAI ved feil
+* BPMN-basert prosessorkestrasjon via Camunda
 
 ---
 
@@ -49,19 +50,19 @@ PayrollService
             ┌────── Kafka Cluster ──────┐
             │                           │
             ↓                           ↓
-   payroll-events            payroll-log-events
+   payroll-events              payroll-log-events
             ↓                           ↓
-   PayrollConsumer        LogSenseAI Consumer
+   PayrollConsumer             LogSenseAI Consumer
             ↓                           ↓
-   Tax Calculation        AI AgentService (Llama3.2)
+   Camunda BPM Process       AI AgentService (Llama3.2)
             ↓                           ↓
-   Update MySQL           Save AI result → PostgreSQL
+   CalculateTaxDelegate      Save AI result → PostgreSQL
             ↓                           ↓
-        COMPLETED              AI Analysis Result
-                                        ↓
-                                    WebSocket 
-                                        ↓
-                            React Dashboard (Realtime UI)
+   SaveCompletedDelegate       AI Analysis Result
+            ↓                           ↓
+       Update MySQL                 WebSocket
+            ↓                           ↓
+        COMPLETED          React Dashboard (Realtime UI)
 ```
 
 ---
@@ -96,16 +97,17 @@ WebSocket → React Dashboard (Realtime UI)
 
 ## Teknologistabel
 
-| Lag               | Teknologi                      |
-|-------------------|--------------------------------|
-| Språk             | Java 21                        |
-| Backend-rammeverk | Spring Boot 3, Spring Web      |
-| Frontend          | React (Create React App)       |
-| Meldingssystem    | Apache Kafka + Zookeeper       |
-| Database          | MySQL 8 + Spring Data JPA      |
-| Serialisering     | Jackson (StringSerializer)     |
-| API-dokumentasjon | Swagger UI (SpringDoc OpenAPI) |
-| Infrastruktur     | Docker + Docker Compose        |
+| Lag                 | Teknologi                      |
+|---------------------|--------------------------------|
+| Språk               | Java 21                        |
+| Backend-rammeverk   | Spring Boot 3, Spring Web      |
+| Frontend            | React (Create React App)       |
+| Meldingssystem      | Apache Kafka + Zookeeper       |
+| Database            | MySQL 8 + Spring Data JPA      |
+| Prosessorkestrasjon | Camunda BPM 7                  |
+| Serialisering       | Jackson (StringSerializer)     |
+| API-dokumentasjon   | Swagger UI (SpringDoc OpenAPI) |
+| Infrastruktur       | Docker + Docker Compose        |
 
 ---
 
@@ -136,6 +138,7 @@ CorrelationId brukes gjennom hele flyten:
 * Database
 * Kafka Producer
 * Kafka Consumer
+* Camunda Process
 * LogSenseAI
 * Frontend
 
@@ -148,8 +151,18 @@ Dette gjør hele behandlingskjeden sporbar.
 Payroll-data behandles asynkront av `PayrollConsumer`
 etter at eventet er publisert til Kafka.
 
-Forretningslogikk utføres i consumer-laget,
-og resultatet lagres tilbake i databasen.
+`PayrollConsumer` starter en Camunda BPMN-prosess (`payroll-process`)
+som orkestrerer behandlingen via `CalculateTaxDelegate` og `SaveCompletedDelegate`.
+
+```
+PayrollConsumer
+      ↓
+Camunda: payroll-process
+      ↓
+CalculateTaxDelegate → beregner skatt (lønn × 0.28)
+      ↓
+SaveCompletedDelegate → lagrer COMPLETED i MySQL
+```
 
 ---
 
@@ -286,6 +299,10 @@ backend/
 ├── controller/
 │   └── PayrollController.java             # POST /api/v1/payroll + GET /{correlationId}
 │
+├── delegate/
+│   ├── CalculateTaxDelegate.java          # Camunda delegate: beregner skatt
+│   └── SaveCompletedDelegate.java         # Camunda delegate: lagrer COMPLETED i MySQL
+│
 ├── dto/
 │   ├── PayrollRequest.java                # Innkommende API-forespørsel (employeeId, salary, month)
 │   └── PayrollResponse.java               # Utgående API-svar (correlationId, status, osv.)
@@ -302,9 +319,15 @@ backend/
 ├── service/
 │   ├── PayrollService.java                # Valider → map DTO → lagre → publiser Kafka-event
 │   ├── PayrollProducer.java               # Serialiserer og sender til payroll-events topic
-│   └── PayrollConsumer.java               # @KafkaListener → skatteberegning → lagre COMPLETED/FAILED
+│   └── PayrollConsumer.java               # @KafkaListener → starter Camunda-prosess
 │
 └── Application.java                       # Spring Boot-applikasjonens startpunkt
+
+resources/
+├── application.yml                        # Delte innstillinger (alle miljøer)
+├── application-k8s.yml                    # Kubernetes-konfigurasjon
+├── application-local.yml                  # Lokal utvikling (ikke committet til Git)
+└── payroll-process.bpmn                   # Camunda BPMN-prosessdefinisjon
 
 frontend/
 └── src/
@@ -406,6 +429,7 @@ Begge systemer deler Kafka-broker, men opererer uavhengig:
 * [x] Integrasjon med LogSenseAI
 * [x] React-frontend med polling
 * [x] Eksternalisert konfigurasjon via `application.yml`
+* [x] BPMN-basert prosessorkestrasjon via Camunda
 * [ ] Retry / Dead Letter Queue
 * [ ] OAuth2 / JWT security
 * [ ] Metrics og observability
@@ -424,4 +448,5 @@ Utviklet som et læringsprosjekt innen:
 * distribuerte systemer
 * producer/consumer-pattern
 * asynkron backend-prosessering
+* BPMN-basert prosessorkestrasjon med Camunda
 * AI-basert observability og feildiagnostikk via LogSenseAI

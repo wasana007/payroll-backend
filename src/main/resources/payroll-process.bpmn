@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <process id="payroll-process"
+           name="Payroll Process"
+           isExecutable="true"
+           camunda:historyTimeToLive="30">
+
+    <!-- Start -->
+    <startEvent id="start" name="Payroll Event Received"/>
+
+    <sequenceFlow id="flow1"
+                  sourceRef="start"
+                  targetRef="calculateTax"/>
+
+    <!-- Calculate Tax -->
+    <serviceTask id="calculateTax"
+                 name="Calculate Tax"
+                 camunda:delegateExpression="${calculateTaxDelegate}">
+    </serviceTask>
+
+    <sequenceFlow id="flow2"
+                  sourceRef="calculateTax"
+                  targetRef="saveCompleted"/>
+
+    <!-- Save Completed -->
+    <serviceTask id="saveCompleted"
+                 name="Save Completed"
+                 camunda:delegateExpression="${saveCompletedDelegate}">
+    </serviceTask>
+
+    <sequenceFlow id="flow3"
+                  sourceRef="saveCompleted"
+                  targetRef="end"/>
+
+    <!-- End -->
+    <endEvent id="end" name="Payroll Completed"/>
+
+  </process>
+
+</definitions>
