@@ -101,7 +101,7 @@ WebSocket → React Dashboard (Realtime UI)
 |---------------------|--------------------------------|
 | Språk               | Java 21                        |
 | Backend-rammeverk   | Spring Boot 3, Spring Web      |
-| Frontend            | React (Create React App)       |
+| Frontend            | React + Vite                   |
 | Meldingssystem      | Apache Kafka + Zookeeper       |
 | Database            | MySQL 8 + Spring Data JPA      |
 | Prosessorkestrasjon | Camunda BPM 7                  |
@@ -331,12 +331,20 @@ resources/
 
 frontend/
 └── src/
-    ├── App.js                             # Skjema, statusvisning, LogSenseAI-knapp, historikk
-    ├── App.css                            # Styling
-    └── config.js                          # API_URL, LOGSENSE_URL, POLL_INTERVAL, POLL_MAX
-```
-
----
+    ├── main.tsx                  # Inngangspunkt
+    ├── App.tsx                   # Hovedkomponent, global state, polling-logikk
+    ├── App.css                   # Styling
+    ├── config.ts                 # Alle konfigurasjonskonstanter
+    ├── vite-env.d.ts             # Vite type declarations
+    ├── types/
+    │   └── payroll.ts            # Delte domenetyper (Status, PayrollResult, HistoryItem)
+    ├── utils/
+    │   └── formatTid.ts          # Formaterer tidspunkt til norsk datostreng
+    └── components/
+        ├── PayrollForm.tsx       # Skjema: Ansatt-ID, Lønn, Måned
+        ├── StatusCard.tsx        # PENDING / COMPLETED / FAILED + resultvisning
+        └── HistoryTable.tsx      # Historikktabell over innsendte rapporter    
+    ---
 
 ## Konfigurasjon
 
@@ -396,7 +404,7 @@ Swagger UI på `http://localhost:8282/swagger-ui.html`
 ```bash
 cd frontend
 npm install
-npm start
+npm run dev
 ```
 
 React-appen tilgjengelig på `http://localhost:3001`
@@ -434,7 +442,8 @@ Begge systemer deler Kafka-broker, men opererer uavhengig:
 * [ ] OAuth2 / JWT security
 * [ ] Metrics og observability
 * [ ] Kafka Schema Registry
-* [ ] Integration tests med Testcontainers
+* [x] Unit- og integrasjonstester (JUnit 5 + Mockito + @WebMvcTest)
+* [ ] Integrasjonstester med ekte database (Testcontainers)
 
 ---
 
